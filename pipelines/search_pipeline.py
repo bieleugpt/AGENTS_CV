@@ -19,6 +19,7 @@ class SearchPipeline:
         raw_results = raw_results or self._collect_data(query, sources)
         blocking_issue = self._find_blocking_issue(raw_results)
         job_search_result = build_job_search_result(query=query, raw_results=raw_results)
+        has_job_source = any(item.get("source") == "hellowork_jobs" for item in raw_results)
 
         if job_search_result:
             return {
@@ -30,6 +31,21 @@ class SearchPipeline:
                 "raw_results": raw_results,
                 "job_offers": job_search_result["job_offers"],
                 "report_files": job_search_result["report_files"],
+            }
+
+        if has_job_source:
+            return {
+                "summary": "Extraction d'offres incomplete",
+                "data": "Aucune offre structuree n'a pu etre extraite depuis la page publique.",
+                "issues": self._extract_pipeline_issues(raw_results),
+                "analysis": (
+                    "La source publique a repondu, mais le contenu recupere n'a pas pu etre "
+                    "transforme en offres structurees. Le fallback LLM est desactive pour cette source."
+                ),
+                "sources": sources,
+                "raw_results": raw_results,
+                "job_offers": [],
+                "report_files": {},
             }
 
         if blocking_issue:

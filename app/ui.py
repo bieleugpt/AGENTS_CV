@@ -100,7 +100,22 @@ def render_result(result: dict) -> None:
     job_offers = result.get("job_offers", [])
     if job_offers:
         st.markdown("### Offres classees")
-        st.dataframe(job_offers, use_container_width=True)
+        min_score = st.slider("Score minimum", min_value=0, max_value=20, value=0, step=1)
+        contracts = sorted({offer.get("contract", "") for offer in job_offers if offer.get("contract")})
+        contract_filter = st.selectbox("Contrat", ["Tous"] + contracts)
+        keyword_filter = st.text_input("Mot-cle filtre", value="")
+
+        filtered_offers = []
+        for offer in job_offers:
+            if offer.get("score", 0) < min_score:
+                continue
+            if contract_filter != "Tous" and offer.get("contract") != contract_filter:
+                continue
+            if keyword_filter and keyword_filter.lower() not in str(offer).lower():
+                continue
+            filtered_offers.append(offer)
+
+        st.dataframe(filtered_offers, use_container_width=True)
 
     st.markdown("### Resultats bruts par source")
     raw_results = result.get("raw_results", [])
@@ -117,7 +132,6 @@ def render_result(result: dict) -> None:
         "mode": result.get("mode"),
         "strategy": result.get("strategy"),
         "tools_used": result.get("tools_used"),
-        "intent_hint": result.get("intent_hint"),
     })
 
 
