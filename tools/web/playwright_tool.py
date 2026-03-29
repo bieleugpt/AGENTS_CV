@@ -33,6 +33,13 @@ class PlaywrightTool:
         - si `site` est une cle de config : navigation pilotee
         - si `site` est une URL brute : simple extraction de page
         """
+        if site == "hellowork_jobs":
+            return self._fallback_request_search(
+                query=query,
+                site=site,
+                reason="fallback requests force pour source publique",
+            )
+
         if sync_playwright is None:
             return self._fallback_request_search(
                 query=query,

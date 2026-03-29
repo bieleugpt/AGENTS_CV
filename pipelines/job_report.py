@@ -259,18 +259,31 @@ def _find_title_index(lines: list[str]) -> int | None:
             continue
         if _looks_like_salary(line) or _looks_like_location(line) or _looks_like_metadata(line):
             continue
+        if _looks_like_company_noise(line):
+            continue
         if " h/f" in normalized or "f/h" in normalized:
             return index
 
     for index, line in enumerate(lines):
-        if len(line) > 12 and not (_looks_like_metadata(line) or _looks_like_salary(line) or _looks_like_location(line)):
+        if len(line) > 12 and not (
+            _looks_like_metadata(line)
+            or _looks_like_salary(line)
+            or _looks_like_location(line)
+            or _looks_like_company_noise(line)
+        ):
             return index
     return None
 
 
 def _pick_company(lines: list[str], title_index: int) -> str:
     for line in lines[title_index + 1:title_index + 6]:
-        if _looks_like_metadata(line) or _looks_like_salary(line) or _looks_like_location(line) or _looks_like_contract(line):
+        if (
+            _looks_like_metadata(line)
+            or _looks_like_salary(line)
+            or _looks_like_location(line)
+            or _looks_like_contract(line)
+            or _looks_like_company_noise(line)
+        ):
             continue
         return line
     return ""
@@ -279,6 +292,8 @@ def _pick_company(lines: list[str], title_index: int) -> str:
 def _pick_location(lines: list[str], title_index: int) -> str:
     for line in lines[title_index + 1:title_index + 8]:
         if _looks_like_salary(line):
+            continue
+        if _looks_like_company_noise(line):
             continue
         if _looks_like_location(line):
             return line
@@ -313,7 +328,12 @@ def _pick_snippet(
     for line in lines[title_index + 1:title_index + 14]:
         if line in excluded:
             continue
-        if _looks_like_metadata(line) or _looks_like_salary(line) or _looks_like_location(line):
+        if (
+            _looks_like_metadata(line)
+            or _looks_like_salary(line)
+            or _looks_like_location(line)
+            or _looks_like_company_noise(line)
+        ):
             continue
         if line.lower().startswith("télétravail") or line.lower().startswith("teletravail"):
             return line
@@ -421,6 +441,17 @@ def _looks_like_metadata(line: str) -> bool:
         'class="',
         'data-controller=',
     ]):
+        return True
+    return False
+
+
+def _looks_like_company_noise(line: str) -> bool:
+    lower = line.lower()
+    if lower.startswith("télétravail") or lower.startswith("teletravail"):
+        return True
+    if lower.startswith("début le") or lower.startswith("debut le"):
+        return True
+    if lower.startswith("+ "):
         return True
     return False
 

@@ -115,7 +115,7 @@ def render_result(result: dict) -> None:
                 continue
             filtered_offers.append(offer)
 
-        st.dataframe(filtered_offers, use_container_width=True)
+        st.dataframe(filtered_offers, width="stretch")
 
     st.markdown("### Resultats bruts par source")
     raw_results = result.get("raw_results", [])
