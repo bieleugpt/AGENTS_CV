@@ -4,11 +4,14 @@
 #AXA_IA/__axa/agent_cv/llm/ollama_client.py
 
 import requests
+import json
 from typing import Dict, Any
 
-from llm.ollama_client import OllamaClient
-import json
-
+from llm.prompts import (
+    build_intent_prompt,
+    build_summary_prompt,
+    build_structured_prompt,
+)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 DEFAULT_MODEL = "llama3"
@@ -20,7 +23,7 @@ class OllamaClient:
 
     def generate(self, prompt: str, temperature: float = 0.2) -> str:
         """
-        Appel simple à Ollama (non streaming)
+        Appel standard à Ollama
         """
         try:
             response = requests.post(
@@ -42,39 +45,43 @@ class OllamaClient:
         except requests.exceptions.RequestException as e:
             return f"[OLLAMA ERROR] {str(e)}"
 
-    def analyze(self, query: str) -> str:
-        """
-        Compréhension de la requête utilisateur
-        """
-        from llm.prompts import build_intent_prompt
+    # =====================================================
+    # HIGH LEVEL METHODS
+    # =====================================================
 
+    def analyze(self, query: str) -> str:
         prompt = build_intent_prompt(query)
         return self.generate(prompt)
 
     def summarize(self, raw_data: str, query: str) -> str:
-        """
-        Résumé structuré des résultats
-        """
-        from llm.prompts import build_summary_prompt
-
         prompt = build_summary_prompt(raw_data, query)
         return self.generate(prompt)
 
-    def structured_analysis(self, raw_data: str, query: str) -> Dict[str, Any]:
-        """
-        Analyse avancée (format JSON attendu)
-        """
-        from llm.prompts import build_structured_prompt
-        import json
 
+
+        
+    def structured_analysis(self, raw_data: str, query: str) -> Dict[str, Any]:
         prompt = build_structured_prompt(raw_data, query)
         output = self.generate(prompt)
-
+    
         try:
-            return json.loads(output)
+            parsed = json.loads(output)
+    
+            # sécurité minimale
+            return {
+                "summary": parsed.get("summary", ""),
+                "data": parsed.get("data", ""),
+                "issues": parsed.get("issues", []),
+                "analysis": parsed.get("analysis", "")
+            }
+    
         except Exception:
             return {
                 "summary": "Erreur parsing JSON",
+                "data": raw_data[:500],
+                "issues": ["Parsing JSON échoué"],
                 "analysis": output,
-                "issues": ["Parsing échoué"],
             }
+
+
+

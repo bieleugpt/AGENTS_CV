@@ -1,17 +1,30 @@
 
 
+
 #AXA_IA/__axa/agent_cv/app/ui.py
-
-import streamlit as st
-from agent.orchestrator import run_agent
-from config.settings import AVAILABLE_SITES
-
 
 import sys
 import os
 
+
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(ROOT_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
+import importlib
+
+import streamlit as st
+
+import config.settings as settings
+importlib.reload(settings)
+
+from agent.orchestrator import run_agent
+from config.settings import AVAILABLE_SITES
+
+print("ROOT_DIR =", ROOT_DIR)
+print("settings file =", settings.__file__)
+print("AVAILABLE_SITES =", settings.AVAILABLE_SITES)
+print("sys.path[0:5] =", sys.path[:5])
 
 
 # =========================================================
@@ -39,8 +52,8 @@ mode = st.sidebar.selectbox(
 
 selected_sites = st.sidebar.multiselect(
     "Sources",
-    AVAILABLE_SITES,
-    default=AVAILABLE_SITES[:1]
+    settings.AVAILABLE_SITES,
+    default=settings.AVAILABLE_SITES[:1]
 )
 
 # =========================================================
@@ -62,11 +75,25 @@ if launch and query:
 
     with st.spinner("Analyse en cours..."):
 
+        '''
         result = run_agent(
             query=query,
             mode=mode,
             sources=selected_sites
         )
+        '''
+        
+        try:
+            result = run_agent(
+                query=query,
+                mode=mode,
+                sources=selected_sites
+            )
+        except Exception as e:
+            st.error(f"Erreur système: {str(e)}")
+            st.stop()
+
+    
 
     # =====================================================
     # RESULT DISPLAY

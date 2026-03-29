@@ -2,60 +2,33 @@
 
 #AXA_IA/__axa/agent_cv/llm/prompts.py
 
-def build_intent_prompt(query: str) -> str:
-    return f"""
-Analyse la requête utilisateur et reformule clairement son objectif.
-
-Requête:
-{query}
-
-Réponse:
-""".strip()
-
-
-def build_summary_prompt(raw_data: str, query: str) -> str:
-    return f"""
-Tu es un assistant data.
-
-Objectif:
-Répondre à la question en utilisant les données.
-
-Question:
-{query}
-
-Données:
-{raw_data}
-
-Réponse claire et concise:
-""".strip()
-
-
 def build_structured_prompt(raw_data: str, query: str) -> str:
     return f"""
-Tu es un assistant d'analyse.
+Tu es un analyste data rigoureux.
 
-Réponds STRICTEMENT en JSON valide.
+RÈGLES OBLIGATOIRES :
+- Tu réponds uniquement à partir des données fournies
+- Tu n'inventes jamais d'information
+- Si les données sont insuffisantes, tu le dis explicitement
+- Tu réponds STRICTEMENT au format JSON valide
+- Aucun texte avant ou après le JSON
 
-Question:
+Question utilisateur :
 {query}
 
-Données:
+Données disponibles :
 {raw_data}
 
-Format:
+Format JSON attendu :
 {{
-  "summary": "résumé court",
-  "data": "infos utiles",
-  "issues": ["Aucune anomalie"],
-  "analysis": "explication claire"
+  "summary": "résumé factuel basé uniquement sur les données",
+  "data": "données utiles extraites ou 'aucune donnée exploitable'",
+  "issues": ["liste de problèmes détectés"],
+  "analysis": "analyse factuelle ou explication de l'impossibilité d'analyser"
 }}
-
-JSON:
 """.strip()
 
-
-
-
+    
 
 
 

@@ -1,10 +1,8 @@
-
-
-
-#AXA_IA/__axa/agent_cv/pipelines/search_pipeline.py
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from llm.ollama_client import OllamaClient
+from pipelines.job_report import build_job_search_result
+from pipelines.source_executor import detect_content_issue, execute_source_query
 
 
 class SearchPipeline:
@@ -12,49 +10,100 @@ class SearchPipeline:
         self.tools = tools
         self.llm = llm
 
-    def run(self, query: str, sources: List[str]) -> Dict[str, Any]:
-        # =====================================================
-        # 1. Récupération des données
-        # =====================================================
-        raw_results = self._collect_data(query, sources)
+    def run(
+        self,
+        query: str,
+        sources: List[str],
+        raw_results: List[Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
+        raw_results = raw_results or self._collect_data(query, sources)
+        blocking_issue = self._find_blocking_issue(raw_results)
+        job_search_result = build_job_search_result(query=query, raw_results=raw_results)
 
-        # =====================================================
-        # 2. Analyse LLM (structurée)
-        # =====================================================
-        structured = self.llm.structured_analysis(
-            raw_data=str(raw_results),
-            query=query
-        )
+        if job_search_result:
+            return {
+                "summary": job_search_result["summary"],
+                "data": job_search_result["data"],
+                "issues": self._extract_pipeline_issues(raw_results),
+                "analysis": job_search_result["analysis"],
+                "sources": sources,
+                "raw_results": raw_results,
+                "job_offers": job_search_result["job_offers"],
+                "report_files": job_search_result["report_files"],
+            }
 
-        # =====================================================
-        # 3. Output standardisé
-        # =====================================================
+        if blocking_issue:
+            structured = self._build_blocked_response()
+        else:
+            structured = self.llm.structured_analysis(
+                raw_data=str(raw_results),
+                query=query,
+            )
+
+        pipeline_issues = self._extract_pipeline_issues(raw_results)
+        llm_issues = structured.get("issues", [])
+
         return {
-            "summary": structured.get("summary"),
+            "summary": self._build_summary(raw_results, structured, blocking_issue),
             "data": structured.get("data"),
-            "issues": structured.get("issues"),
+            "issues": pipeline_issues + llm_issues,
             "analysis": structured.get("analysis"),
             "sources": sources,
+            "raw_results": raw_results,
+            "job_offers": [],
+            "report_files": {},
         }
 
-    # =========================================================
-    # INTERNALS
-    # =========================================================
-
     def _collect_data(self, query: str, sources: List[str]) -> List[Dict[str, Any]]:
-        results = []
+        return [
+            execute_source_query(query, source, self.tools)
+            for source in sources
+        ]
 
-        for source in sources:
-            if "site" in source.lower():
-                content = self.tools["web"].search(query, source)
-            elif "sql" in source.lower():
-                content = self.tools["sql"].query(query)
+    def _extract_pipeline_issues(self, raw_results: List[Dict[str, Any]]) -> List[str]:
+        issues = []
+
+        for item in raw_results:
+            if item["status"] == "success":
+                continue
+
+            specific_issue = detect_content_issue(str(item.get("content", "")))
+            if specific_issue:
+                issues.append(f"{specific_issue} sur la source {item['source']}")
             else:
-                content = f"Source non gérée: {source}"
+                issues.append(f"Probleme sur la source {item['source']}")
 
-            results.append({
-                "source": source,
-                "content": content
-            })
+        if not issues:
+            issues.append("Aucune anomalie technique detectee")
 
-        return results
+        return issues
+
+    def _build_summary(
+        self,
+        raw_results: List[Dict[str, Any]],
+        structured: Dict[str, Any],
+        blocking_issue: str | None,
+    ) -> str:
+        if blocking_issue:
+            for item in raw_results:
+                specific_issue = detect_content_issue(str(item.get("content", "")))
+                if specific_issue:
+                    return f"Collecte impossible: {specific_issue.lower()} sur {item['source']}."
+
+        return structured.get("summary")
+
+    def _find_blocking_issue(self, raw_results: List[Dict[str, Any]]) -> str | None:
+        for item in raw_results:
+            specific_issue = detect_content_issue(str(item.get("content", "")))
+            if specific_issue:
+                return specific_issue
+        return None
+
+    @staticmethod
+    def _build_blocked_response() -> Dict[str, Any]:
+        return {
+            "summary": "",
+            "data": "Aucune donnee exploitable: page anti-bot ou JavaScript requis",
+            "issues": [],
+            "analysis": "La source a retourne une page de verification anti-bot. Le contenu metier n'a pas pu etre collecte.",
+        }

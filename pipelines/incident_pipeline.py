@@ -1,10 +1,7 @@
-
-
-
-#AXA_IA/__axa/agent_cv/pipelines/incident_pipeline.py
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from llm.ollama_client import OllamaClient
+from pipelines.source_executor import detect_content_issue, execute_source_query
 
 
 class IncidentPipeline:
@@ -12,54 +9,43 @@ class IncidentPipeline:
         self.tools = tools
         self.llm = llm
 
-    def run(self, query: str, sources: List[str]) -> Dict[str, Any]:
-        # =====================================================
-        # 1. Récupération incidents
-        # =====================================================
-        incidents = self._collect_incidents(query, sources)
-
-        # =====================================================
-        # 2. Détection anomalies simples
-        # =====================================================
+    def run(
+        self,
+        query: str,
+        sources: List[str],
+        raw_results: List[Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
+        incidents = raw_results or self._collect_incidents(query, sources)
         issues = self._detect_issues(incidents)
+        blocking_issue = self._find_blocking_issue(incidents)
 
-        # =====================================================
-        # 3. Analyse LLM
-        # =====================================================
-        structured = self.llm.structured_analysis(
-            raw_data=str(incidents),
-            query=query
-        )
+        if blocking_issue:
+            structured = self._build_blocked_response()
+        else:
+            structured = self.llm.structured_analysis(
+                raw_data=str(incidents),
+                query=query,
+            )
 
-        # =====================================================
-        # 4. Output
-        # =====================================================
         return {
-            "summary": structured.get("summary"),
+            "summary": self._build_summary(incidents, structured, blocking_issue),
             "data": structured.get("data"),
-            "issues": issues,
+            "issues": issues + structured.get("issues", []),
             "analysis": structured.get("analysis"),
             "sources": sources,
+            "raw_results": incidents,
         }
-
-    # =========================================================
-    # INTERNALS
-    # =========================================================
 
     def _collect_incidents(self, query: str, sources: List[str]) -> List[Dict[str, Any]]:
         results = []
 
         for source in sources:
-            if "sql" in source.lower():
-                content = self.tools["sql"].query(query)
-            elif "site" in source.lower():
-                content = self.tools["web"].search(query, source)
-            else:
-                content = "Source non supportée"
-
+            source_result = execute_source_query(query, source, self.tools)
             results.append({
-                "source": source,
-                "incident_data": content
+                "source": source_result["source"],
+                "source_kind": source_result["source_kind"],
+                "status": source_result["status"],
+                "incident_data": source_result["content"],
             })
 
         return results
@@ -69,11 +55,46 @@ class IncidentPipeline:
 
         for item in incidents:
             content = str(item.get("incident_data", ""))
+            specific_issue = detect_content_issue(content)
 
-            if "error" in content.lower():
-                issues.append(f"Erreur détectée dans {item['source']}")
+            if specific_issue:
+                issues.append(f"{specific_issue} sur la source {item['source']}")
+                continue
+
+            if "error" in content.lower() or "warning" in content.lower():
+                issues.append(f"Erreur detectee dans {item['source']}")
 
         if not issues:
-            issues.append("Aucune anomalie détectée")
+            issues.append("Aucune anomalie detectee")
 
         return issues
+
+    def _build_summary(
+        self,
+        incidents: List[Dict[str, Any]],
+        structured: Dict[str, Any],
+        blocking_issue: str | None,
+    ) -> str:
+        if blocking_issue:
+            for item in incidents:
+                specific_issue = detect_content_issue(str(item.get("incident_data", "")))
+                if specific_issue:
+                    return f"Collecte impossible: {specific_issue.lower()} sur {item['source']}."
+
+        return structured.get("summary")
+
+    def _find_blocking_issue(self, incidents: List[Dict[str, Any]]) -> str | None:
+        for item in incidents:
+            specific_issue = detect_content_issue(str(item.get("incident_data", "")))
+            if specific_issue:
+                return specific_issue
+        return None
+
+    @staticmethod
+    def _build_blocked_response() -> Dict[str, Any]:
+        return {
+            "summary": "",
+            "data": "Aucune donnee exploitable: page anti-bot ou JavaScript requis",
+            "issues": [],
+            "analysis": "La source a retourne une page de verification anti-bot. Le contenu metier n'a pas pu etre collecte.",
+        }

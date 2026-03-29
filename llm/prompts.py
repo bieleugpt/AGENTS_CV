@@ -1,61 +1,58 @@
-
-
-#AXA_IA/__axa/agent_cv/llm/prompts.py
-
 def build_intent_prompt(query: str) -> str:
     return f"""
-Analyse la requête utilisateur et reformule clairement son objectif.
+Tu classes une requete utilisateur dans une seule categorie.
 
-Requête:
+Categories autorisees :
+- incident
+- recherche
+
+Regles :
+- Reponds avec un seul mot
+- Pas de phrase complete
+- Si tu hesites, reponds recherche
+
+Requete :
 {query}
-
-Réponse:
 """.strip()
 
 
 def build_summary_prompt(raw_data: str, query: str) -> str:
     return f"""
-Tu es un assistant data.
+Tu es un analyste factuel.
 
-Objectif:
-Répondre à la question en utilisant les données.
-
-Question:
+Question utilisateur :
 {query}
 
-Données:
+Donnees disponibles :
 {raw_data}
 
-Réponse claire et concise:
+Fais une synthese concise basee uniquement sur les donnees fournies.
+Si les donnees sont insuffisantes, dis-le explicitement.
 """.strip()
 
 
 def build_structured_prompt(raw_data: str, query: str) -> str:
     return f"""
-Tu es un assistant d'analyse.
+Tu es un analyste data rigoureux.
 
-Réponds STRICTEMENT en JSON valide.
+REGLES OBLIGATOIRES :
+- Tu reponds uniquement a partir des donnees fournies
+- Tu n'inventes jamais d'information
+- Si les donnees sont insuffisantes, tu le dis explicitement
+- Tu reponds STRICTEMENT au format JSON valide
+- Aucun texte avant ou apres le JSON
 
-Question:
+Question utilisateur :
 {query}
 
-Données:
+Donnees disponibles :
 {raw_data}
 
-Format:
+Format JSON attendu :
 {{
-  "summary": "résumé court",
-  "data": "infos utiles",
-  "issues": ["Aucune anomalie"],
-  "analysis": "explication claire"
+  "summary": "resume factuel base uniquement sur les donnees",
+  "data": "donnees utiles extraites ou 'aucune donnee exploitable'",
+  "issues": ["liste de problemes detectes"],
+  "analysis": "analyse factuelle ou explication de l'impossibilite d'analyser"
 }}
-
-JSON:
 """.strip()
-
-
-
-
-
-
-

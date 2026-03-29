@@ -1,102 +1,96 @@
-
-
-#AXA_IA/__axa/agent_cv/agent/router.py
-
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
+import config.settings as settings
 
 
 class Router:
-    """
-    Router simple chargé de :
-    1. sélectionner les sources valides
-    2. déterminer la stratégie d'exécution
-    3. proposer le ou les tools à appeler
-    """
-
     SUPPORTED_MODES = {"Recherche", "Analyse incident"}
 
     def __init__(self, available_sources: List[str] | None = None) -> None:
         self.available_sources = available_sources or []
 
     def validate_mode(self, mode: str) -> str:
-        """
-        Vérifie que le mode demandé est supporté.
-        """
         if mode not in self.SUPPORTED_MODES:
             raise ValueError(
-                f"Mode non supporté: {mode}. "
+                f"Mode non supporte: {mode}. "
                 f"Modes disponibles: {sorted(self.SUPPORTED_MODES)}"
             )
         return mode
 
     def resolve_sources(self, requested_sources: List[str]) -> List[str]:
-        """
-        Filtre les sources demandées pour ne garder que celles autorisées.
-        Si aucune source n'est valide, renvoie une liste vide.
-        """
         if not requested_sources:
             return []
 
-        if not self.available_sources:
-            return requested_sources
+        resolved_sources = []
+        for source in requested_sources:
+            if source in resolved_sources:
+                continue
+            resolved_sources.append(source)
 
-        valid_sources = [
-            source for source in requested_sources
-            if source in self.available_sources
-        ]
-        return valid_sources
+        return resolved_sources
 
     def build_plan(self, query: str, mode: str, requested_sources: List[str]) -> Dict[str, Any]:
-        """
-        Construit un plan d'exécution minimal.
-        """
         validated_mode = self.validate_mode(mode)
         resolved_sources = self.resolve_sources(requested_sources)
 
-        if validated_mode == "Analyse incident":
-            strategy = "incident_pipeline"
-        else:
-            strategy = "search_pipeline"
+        if not resolved_sources:
+            resolved_sources = list(dict.fromkeys(requested_sources))
 
-        tools = self._select_tools(mode=validated_mode, sources=resolved_sources)
+        if not resolved_sources:
+            raise ValueError("Aucune source selectionnee.")
 
         return {
             "query": query.strip(),
             "mode": validated_mode,
             "sources": resolved_sources,
-            "strategy": strategy,
-            "tools": tools,
+            "strategy": self.strategy_for_mode(validated_mode),
+            "tools": self._select_tools(resolved_sources),
         }
 
-    def _select_tools(self, mode: str, sources: List[str]) -> List[str]:
-        """
-        Sélectionne les tools théoriques à appeler.
-        Tu pourras plus tard mapper ça vers de vrais modules :
-        - playwright
-        - sql
-        - files
-        - ollama
-        """
+    @staticmethod
+    def strategy_for_mode(mode: str) -> str:
+        return "incident_pipeline" if mode == "Analyse incident" else "search_pipeline"
+
+    def _select_tools(self, sources: List[str]) -> List[str]:
         tools: List[str] = []
 
         for source in sources:
-            source_lower = source.lower()
+            source_kind = self._resolve_source_kind(source)
 
-            if "site" in source_lower or "web" in source_lower:
-                tools.append("playwright")
-            elif "sql" in source_lower or "db" in source_lower or "database" in source_lower:
+            if source_kind == "web":
+                tools.append("web")
+            elif source_kind == "sql":
                 tools.append("sql")
-            elif "file" in source_lower or "pdf" in source_lower or "excel" in source_lower:
-                tools.append("files")
             else:
                 tools.append("generic_source")
-
-        if mode == "Analyse incident" and "incident_analyzer" not in tools:
-            tools.append("incident_analyzer")
 
         if "ollama" not in tools:
             tools.append("ollama")
 
         return list(dict.fromkeys(tools))
+
+    def detect_intent(self, query: str, llm: Any) -> str:
+        response = llm.analyze(query)
+        if not response or response.startswith("[OLLAMA ERROR]"):
+            return "search_pipeline"
+
+        normalized = response.lower()
+        if any(word in normalized for word in ["incident", "anomalie", "erreur", "failure"]):
+            return "incident_pipeline"
+
+        return "search_pipeline"
+
+    @staticmethod
+    def _resolve_source_kind(source: str) -> str:
+        config = settings.SITE_CONFIGS.get(source)
+        if config:
+            return config.get("type", "generic")
+
+        source_lower = source.lower()
+        if source_lower.startswith(("http://", "https://")):
+            return "web"
+        if any(token in source_lower for token in ["sql", "db", "database"]):
+            return "sql"
+        return "generic"
